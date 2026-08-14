@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import { PanelHeader } from "@/components/PanelHeader";
 import { AlertIcon, CheckCircleIcon, ChevronDownIcon, RefreshIcon, SparkleIcon } from "@/components/icons";
-import type { ExamCandidate, ExamConfig, KnowledgeBaseSummary, ScenarioQuestion, VerifierResult } from "@/lib/types";
+import { useExamQueue, type ExamJobStatus } from "@/lib/examQueue";
+import type { ExamConfig, KnowledgeBaseSummary } from "@/lib/types";
 
-type Phase = "config" | "pipeline" | "results";
 type PipelineStep = "generate" | "verify" | "regenerate" | "finalize";
 type Difficulty = "easy" | "medium" | "hard";
 
@@ -16,17 +17,27 @@ const STEP_LABEL: Record<PipelineStep, string> = {
   finalize: "Saving to knowledge base",
 };
 
+const STATUS_TO_STEP: Partial<Record<ExamJobStatus, PipelineStep>> = {
+  generating: "generate",
+  verifying: "verify",
+  regenerating: "regenerate",
+  finalizing: "finalize",
+};
+
 const DIFFICULTY_STYLE: Record<Difficulty, { badge: string; border: string }> = {
   easy: { badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400", border: "border-l-emerald-500" },
   medium: { badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400", border: "border-l-amber-500" },
   hard: { badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400", border: "border-l-rose-500" },
 };
 
-export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
+export function QuestionGenerator() {
+  const { jobs, activeJobId, setActiveJobId, startJob, dismissJob } = useExamQueue();
+  const activeJob = jobs.find((j) => j.id === activeJobId) ?? null;
+
   const [documents, setDocuments] = useState<KnowledgeBaseSummary[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("config");
   const [config, setConfig] = useState<ExamConfig>({
     course: "",
     topics: [],
@@ -34,19 +45,13 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
     difficulty: { easy: 2, medium: 2, hard: 1 },
   });
 
-  const [currentStep, setCurrentStep] = useState<PipelineStep | null>(null);
-  const [log, setLog] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  const [questions, setQuestions] = useState<ScenarioQuestion[]>([]);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
-  const [resultLabel, setResultLabel] = useState("");
 
   useEffect(() => {
     fetch("/api/documents")
       .then((res) => res.json())
       .then((data) => setDocuments(data.documents ?? []))
-      .catch(() => setError("Failed to load the knowledge base."))
+      .catch(() => setLoadError("Failed to load the knowledge base."))
       .finally(() => setLoadingCourses(false));
   }, []);
 
@@ -55,7 +60,15 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
     [documents]
   );
 
-  const label = config.course;
+  const topicsForCourse = useMemo(() => {
+    if (!config.course) return [];
+    const set = new Set<string>();
+    for (const doc of documents) {
+      if (doc.course?.trim() !== config.course) continue;
+      for (const t of doc.analysis.topics ?? []) set.add(t);
+    }
+    return Array.from(set).sort();
+  }, [documents, config.course]);
 
   function selectCourse(course: string) {
     setConfig((c) => ({ ...c, course, topics: [] }));
@@ -65,104 +78,23 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
     setRevealed((r) => ({ ...r, [id]: !r[id] }));
   }
 
-  async function runPipeline() {
+  function submit() {
     if (!config.course.trim()) return;
-    setPhase("pipeline");
-    setError(null);
-    setLog([]);
-    setResultLabel(label);
-
-    try {
-      // 1. Generate
-      setCurrentStep("generate");
-      const genRes = await fetch("/api/exam/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config }),
-      });
-      const genData = await genRes.json();
-      if (!genRes.ok) throw new Error(genData.error ?? "Generation failed.");
-      const candidates: ExamCandidate[] = genData.candidates;
-      const docId: string = genData.documentId;
-      setLog((l) => [
-        ...l,
-        `Generated ${candidates.length} candidates from ${genData.matchedDocuments.length} source document(s).`,
-      ]);
-
-      // 2. Verify
-      setCurrentStep("verify");
-      const verifyRes = await fetch("/api/exam/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ course: config.course, topics: config.topics, candidates }),
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error(verifyData.error ?? "Verification failed.");
-      const verdicts: VerifierResult[] = verifyData.verdicts;
-      const verdictById = new Map(verdicts.map((v) => [v.id, v]));
-
-      const accepted: ScenarioQuestion[] = [];
-      const rejected: { candidate: ExamCandidate; issues: string[] }[] = [];
-      for (const candidate of candidates) {
-        const verdict = verdictById.get(candidate.id);
-        if (verdict?.recommendation === "accept") {
-          accepted.push({ ...candidate, verification: { status: "verified" } });
-        } else {
-          rejected.push({ candidate, issues: verdict?.issues ?? ["Failed verification"] });
-        }
-      }
-      setLog((l) => [
-        ...l,
-        `Verified: ${accepted.length} accepted, ${rejected.length} flagged for regeneration.`,
-      ]);
-
-      // 3. Regenerate rejected (single batched pass, no re-verification)
-      if (rejected.length > 0) {
-        setCurrentStep("regenerate");
-        const regenRes = await fetch("/api/exam/regenerate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ course: config.course, topics: config.topics, rejected }),
-        });
-        const regenData = await regenRes.json();
-        if (!regenRes.ok) throw new Error(regenData.error ?? "Regeneration failed.");
-        const fixed: ExamCandidate[] = regenData.fixed;
-        const issuesById = new Map(rejected.map((r) => [r.candidate.id, r.issues]));
-        fixed.forEach((candidate) => {
-          accepted.push({
-            ...candidate,
-            verification: {
-              status: "regenerated",
-              reasoning: issuesById.get(candidate.id)?.join("; "),
-            },
-          });
-        });
-        setLog((l) => [...l, `Regenerated ${fixed.length} question(s).`]);
-      }
-
-      const finalQuestions = accepted.slice(0, config.questionCount);
-
-      // 4. Finalize (persist)
-      setCurrentStep("finalize");
-      const finalizeRes = await fetch("/api/exam/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId: docId, topic: label, questions: finalQuestions }),
-      });
-      const finalizeData = await finalizeRes.json();
-      if (!finalizeRes.ok) throw new Error(finalizeData.error ?? "Failed to save.");
-      setLog((l) => [...l, "Saved."]);
-
-      setQuestions(finalQuestions);
-      setRevealed({});
-      setCurrentStep(null);
-      setPhase("results");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Question generation failed.");
-      setCurrentStep(null);
-      setPhase("config");
-    }
+    const id = startJob(config);
+    setActiveJobId(id);
   }
+
+  function startNewSet() {
+    if (activeJob && (activeJob.status === "done" || activeJob.status === "error")) {
+      dismissJob(activeJob.id);
+    }
+    setActiveJobId(null);
+    setConfig((c) => ({ ...c, course: "", topics: [] }));
+    setRevealed({});
+  }
+
+  const phase: "config" | "pipeline" | "results" =
+    !activeJob || activeJob.status === "error" ? "config" : activeJob.status === "done" ? "results" : "pipeline";
 
   return (
     <div className="flex h-full flex-col">
@@ -170,25 +102,26 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
         icon={<SparkleIcon className="h-5 w-5" />}
         title="Question Generator"
         description="Scenario-based practice questions with worked solutions, grounded in your material"
-        onMenuClick={onOpenMenu}
       />
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-        {error && (
+        {(loadError || activeJob?.status === "error") && (
           <div className="mb-4 flex max-w-xl items-start gap-2 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-600 dark:text-rose-400">
             <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>{error}</p>
+            <p>{loadError ?? activeJob?.error}</p>
           </div>
         )}
 
         {phase === "config" && (
           <div className="max-w-md space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm">
             <p className="text-sm text-foreground/60">
-              Pick a course. The agent generates realistic, scenario-based
-              practice questions from that course's material, verifies each
-              one against it, and regenerates anything that fails
-              verification — nothing is saved unverified. Each question comes
-              with a worked solution, not an auto-grader.
+              Pick a course, and optionally one or more topics within it. The
+              agent generates realistic, scenario-based practice questions from
+              that material, verifies each one against it, and regenerates
+              anything that fails verification — nothing is saved unverified.
+              Each question comes with a worked solution, not an auto-grader.
+              Generation keeps running in the background even if you switch
+              pages.
             </p>
 
             <div>
@@ -216,6 +149,27 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
                 </select>
               )}
             </div>
+
+            {config.course && (
+              <div>
+                <label className="mb-2 block text-xs font-medium uppercase tracking-wide text-foreground/50">
+                  Topics{" "}
+                  <span className="normal-case text-foreground/40">
+                    (optional — leave empty for the whole course)
+                  </span>
+                </label>
+                {topicsForCourse.length === 0 ? (
+                  <p className="text-sm text-foreground/50">No extracted topics for this course yet.</p>
+                ) : (
+                  <MultiSelectDropdown
+                    options={topicsForCourse}
+                    selected={config.topics}
+                    onChange={(topics) => setConfig((c) => ({ ...c, topics }))}
+                    placeholder="Select topics…"
+                  />
+                )}
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-foreground/50">
@@ -259,7 +213,7 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
             </div>
             <button
               type="button"
-              onClick={runPipeline}
+              onClick={submit}
               disabled={!config.course.trim()}
               className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground shadow-sm shadow-brand/30 transition-colors hover:bg-brand-strong disabled:opacity-50"
             >
@@ -268,14 +222,24 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
           </div>
         )}
 
-        {phase === "pipeline" && (
+        {phase === "pipeline" && activeJob && (
           <div className="max-w-md rounded-2xl border border-border bg-surface p-5 shadow-sm">
-            <h3 className="mb-4 text-sm font-semibold">Building questions on &ldquo;{label}&rdquo;</h3>
+            <h3 className="mb-4 text-sm font-semibold">
+              Building questions on &ldquo;{activeJob.label}&rdquo;
+            </h3>
+            <p className="mb-4 text-xs text-foreground/50">
+              Running in the background — feel free to switch pages, this keeps going.
+            </p>
             <ul className="space-y-4">
               {(["generate", "verify", "regenerate", "finalize"] as PipelineStep[])
-                .filter((step) => step !== "regenerate" || currentStep === "regenerate" || log.some((l) => l.startsWith("Regenerated")))
+                .filter(
+                  (step) =>
+                    step !== "regenerate" ||
+                    STATUS_TO_STEP[activeJob.status] === "regenerate" ||
+                    activeJob.log.some((l) => l.startsWith("Regenerated"))
+                )
                 .map((step, idx, arr) => {
-                  const doneLine = log.find((l) =>
+                  const doneLine = activeJob.log.find((l) =>
                     step === "generate"
                       ? l.startsWith("Generated")
                       : step === "verify"
@@ -284,7 +248,7 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
                       ? l.startsWith("Regenerated")
                       : l.startsWith("Saved")
                   );
-                  const active = currentStep === step;
+                  const active = STATUS_TO_STEP[activeJob.status] === step;
                   const last = idx === arr.length - 1;
                   return (
                     <li key={step} className="relative flex gap-3 pb-1">
@@ -315,22 +279,21 @@ export function QuestionGenerator({ onOpenMenu }: { onOpenMenu?: () => void }) {
           </div>
         )}
 
-        {phase === "results" && (
+        {phase === "results" && activeJob && (
           <div className="max-w-3xl space-y-5">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold">&ldquo;{resultLabel}&rdquo; — {questions.length} questions</h3>
+              <h3 className="text-base font-semibold">
+                &ldquo;{activeJob.label}&rdquo; — {activeJob.questions.length} questions
+              </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setPhase("config");
-                  setConfig({ ...config, course: "", topics: [] });
-                }}
+                onClick={startNewSet}
                 className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground/60 transition-colors hover:bg-brand/10 hover:text-brand"
               >
                 New set
               </button>
             </div>
-            {questions.map((q, i) => {
+            {activeJob.questions.map((q, i) => {
               const open = !!revealed[q.id];
               return (
                 <div

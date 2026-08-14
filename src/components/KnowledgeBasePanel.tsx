@@ -52,7 +52,7 @@ function groupByCourseAndTopic(documents: KnowledgeBaseSummary[]): CourseGroup[]
   });
 }
 
-export function KnowledgeBasePanel({ onOpenMenu }: { onOpenMenu?: () => void }) {
+export function KnowledgeBasePanel() {
   const { jobs, completedCount, enqueueFiles, dismissJob } = useUploadQueue();
   const [documents, setDocuments] = useState<KnowledgeBaseSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -113,7 +113,6 @@ export function KnowledgeBasePanel({ onOpenMenu }: { onOpenMenu?: () => void }) 
         icon={<BookIcon className="h-5 w-5" />}
         title="Knowledge Base"
         description="Every upload here powers Exam Prep chat and the Question Generator"
-        onMenuClick={onOpenMenu}
         right={
           <button
             type="button"
