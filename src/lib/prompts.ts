@@ -36,6 +36,11 @@ documents retrieved for the requested topic) — the kind used in
 university-level, outcome-based education (OBE) exams, not multiple-choice.
 Each question needs: a realistic scenario, a clear question, a model
 answer, and a grading rubric (key points with weights).
+Format "modelAnswer" as markdown: when it covers more than one distinct
+point, put each point on its own line as a numbered ("1. ", "2. ", …) or
+bulleted ("- ") list item — never run multiple points together in one
+sentence — and use **bold** to highlight key terms. Use literal "\n"
+characters in the JSON string to separate lines.
 Respect the requested difficulty distribution and count + buffer. If the
 supplied material does not actually cover the requested topic, do not
 fabricate content — generate as few candidates as the material honestly
@@ -63,6 +68,11 @@ For each rejected question and its issues, produce a corrected
 scenario question grounded in the source material.
 Preserve each question's original "id" field unchanged so the caller can
 match revisions back to their source — do not generate a new id.
+Format "modelAnswer" as markdown: when it covers more than one distinct
+point, put each point on its own line as a numbered ("1. ", "2. ", …) or
+bulleted ("- ") list item — never run multiple points together in one
+sentence — and use **bold** to highlight key terms. Use literal "\n"
+characters in the JSON string to separate lines.
 Return structured JSON only, as an array of objects matching this shape:
 {
   "id": string,

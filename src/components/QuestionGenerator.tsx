@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { MarkdownLite } from "@/components/MarkdownLite";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import { PanelHeader } from "@/components/PanelHeader";
 import { AlertIcon, CheckCircleIcon, ChevronDownIcon, RefreshIcon, SparkleIcon } from "@/components/icons";
@@ -340,7 +341,9 @@ export function QuestionGenerator() {
                           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
                             Model answer
                           </p>
-                          <p className="text-sm text-foreground/80">{q.modelAnswer}</p>
+                          <div className="text-sm text-foreground/80">
+                            <MarkdownLite content={q.modelAnswer} />
+                          </div>
                         </div>
                         {q.rubric.length > 0 && (
                           <div>

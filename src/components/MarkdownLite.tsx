@@ -54,9 +54,37 @@ function parseBlocks(source: string): Block[] {
       paraLines.push(lines[i]);
       i++;
     }
-    blocks.push({ type: "paragraph", text: paraLines.join(" ") });
+    blocks.push(...splitInlineOrderedList(paraLines.join(" ")));
   }
 
+  return blocks;
+}
+
+// Some model output runs a numbered list together in one sentence instead of
+// one item per line (e.g. "...are: 1. Accuracy: ... 2. Timeliness: ..."). If a
+// paragraph contains a clean 1, 2, 3, … run of inline markers, split it into a
+// real list instead of rendering the digits as plain text.
+function splitInlineOrderedList(text: string): Block[] {
+  const markerRe = /(?:^|\s)(\d{1,2})[.)]\s+/g;
+  const matches: { index: number; end: number; num: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = markerRe.exec(text))) {
+    matches.push({ index: m.index, end: markerRe.lastIndex, num: Number(m[1]) });
+  }
+
+  if (matches.length < 2 || matches.some((match, idx) => match.num !== idx + 1)) {
+    return [{ type: "paragraph", text }];
+  }
+
+  const blocks: Block[] = [];
+  const lead = text.slice(0, matches[0].index).trim();
+  if (lead) blocks.push({ type: "paragraph", text: lead });
+
+  const items = matches.map((match, idx) => {
+    const end = idx + 1 < matches.length ? matches[idx + 1].index : text.length;
+    return text.slice(match.end, end).trim();
+  });
+  blocks.push({ type: "list", ordered: true, items });
   return blocks;
 }
 
