@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import { PanelHeader } from "@/components/PanelHeader";
-import { AlertIcon, CheckCircleIcon, ChevronDownIcon, RefreshIcon, SparkleIcon } from "@/components/icons";
+import { AlertIcon, CheckCircleIcon, ChevronDownIcon, RefreshIcon, SparkleIcon, XIcon } from "@/components/icons";
 import { useExamQueue, type ExamJobStatus } from "@/lib/examQueue";
 import type { ExamConfig, KnowledgeBaseSummary } from "@/lib/types";
 
@@ -86,13 +86,15 @@ export function QuestionGenerator() {
   }
 
   function startNewSet() {
-    if (activeJob && (activeJob.status === "done" || activeJob.status === "error")) {
-      dismissJob(activeJob.id);
-    }
     setActiveJobId(null);
     setConfig((c) => ({ ...c, course: "", topics: [] }));
     setRevealed({});
   }
+
+  const previousSets = jobs
+    .filter((j) => j.status === "done" || j.status === "error")
+    .slice()
+    .reverse();
 
   const phase: "config" | "pipeline" | "results" =
     !activeJob || activeJob.status === "error" ? "config" : activeJob.status === "done" ? "results" : "pipeline";
@@ -114,7 +116,8 @@ export function QuestionGenerator() {
         )}
 
         {phase === "config" && (
-          <div className="max-w-md space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+          <div className="mx-auto max-w-md space-y-5">
+          <div className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm">
             <p className="text-sm text-foreground/60">
               Pick a course, and optionally one or more topics within it. The
               agent generates realistic, scenario-based practice questions from
@@ -221,10 +224,47 @@ export function QuestionGenerator() {
               Generate questions
             </button>
           </div>
+
+          {previousSets.length > 0 && (
+            <div className="space-y-2 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-wide text-foreground/50">
+                Previous sets
+              </p>
+              <ul className="space-y-1.5">
+                {previousSets.map((j) => (
+                  <li
+                    key={j.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border px-3 py-2"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => j.status === "done" && setActiveJobId(j.id)}
+                      disabled={j.status !== "done"}
+                      className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <p className="truncate text-sm font-medium">{j.label}</p>
+                      <p className="text-xs text-foreground/50">
+                        {j.status === "done" ? `${j.questions.length} questions` : "Failed"}
+                      </p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => dismissJob(j.id)}
+                      aria-label="Remove"
+                      className="shrink-0 rounded-lg p-1.5 text-foreground/40 transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          </div>
         )}
 
         {phase === "pipeline" && activeJob && (
-          <div className="max-w-md rounded-2xl border border-border bg-surface p-5 shadow-sm">
+          <div className="mx-auto max-w-md rounded-2xl border border-border bg-surface p-5 shadow-sm">
             <h3 className="mb-4 text-sm font-semibold">
               Building questions on &ldquo;{activeJob.label}&rdquo;
             </h3>
@@ -281,7 +321,7 @@ export function QuestionGenerator() {
         )}
 
         {phase === "results" && activeJob && (
-          <div className="max-w-5xl space-y-5">
+          <div className="mx-auto max-w-5xl space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">
                 &ldquo;{activeJob.label}&rdquo; — {activeJob.questions.length} questions
@@ -323,8 +363,12 @@ export function QuestionGenerator() {
                         </span>
                       )}
                     </div>
-                    <p className="mb-2 text-sm text-foreground/70">{q.scenario}</p>
-                    <p className="mb-3 text-sm font-medium">{q.question}</p>
+                    <div className="mb-2 text-sm text-foreground/70">
+                      <MarkdownLite content={q.scenario} />
+                    </div>
+                    <div className="mb-3 text-sm font-medium">
+                      <MarkdownLite content={q.question} />
+                    </div>
 
                     <button
                       type="button"
@@ -354,7 +398,9 @@ export function QuestionGenerator() {
                               {q.rubric.map((r, j) => (
                                 <li key={j} className="flex items-start gap-1.5 text-sm text-foreground/80">
                                   <CheckCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                                  {r.point}
+                                  <div className="min-w-0">
+                                    <MarkdownLite content={r.point} />
+                                  </div>
                                 </li>
                               ))}
                             </ul>

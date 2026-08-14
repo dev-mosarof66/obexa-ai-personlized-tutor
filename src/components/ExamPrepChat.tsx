@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MarkdownLite } from "@/components/MarkdownLite";
 import { PanelHeader } from "@/components/PanelHeader";
 import { AlertIcon, BookIcon, ChatIcon, SendIcon, SparkleIcon } from "@/components/icons";
+import { useChatSession } from "@/lib/chatSession";
 import type { ChatMessage, KnowledgeBaseSummary } from "@/lib/types";
 
 type MatchedDoc = { documentId: string; title: string };
@@ -46,10 +47,11 @@ export function ExamPrepChat() {
   const [documents, setDocuments] = useState<KnowledgeBaseSummary[]>([]);
   const [loadingCourses, setLoadingCourses] = useState(true);
   const [courseQuery, setCourseQuery] = useState("");
-  const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
 
-  const [topic, setTopic] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Lives in ChatSessionProvider (mounted in the (app) layout), not local
+  // state, so the active topic and its messages survive navigating away to
+  // another page and back — this component remounts on every route change.
+  const { topic, setTopic, messages, setMessages } = useChatSession();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -81,8 +83,8 @@ export function ExamPrepChat() {
   }, [courses, courseQuery]);
 
   const courseTopics = useMemo(
-    () => courses.find((c) => c.course === selectedCourse)?.topics ?? [],
-    [courses, selectedCourse]
+    () => courses.find((c) => c.course === topic)?.topics ?? [],
+    [courses, topic]
   );
 
   // Derived, not stored: matches whatever /api/chat's findRelevantDocuments
@@ -95,14 +97,6 @@ export function ExamPrepChat() {
       .slice(0, 3)
       .map((d) => ({ documentId: d.documentId, title: d.analysis.title }));
   }, [documents, topic]);
-
-  // If a chat was restored from the URL (refresh), try to reattach it to its
-  // course once the knowledge base loads, so the in-chat topic chips work.
-  useEffect(() => {
-    if (topic && !selectedCourse && courses.some((c) => c.course === topic)) {
-      setSelectedCourse(topic);
-    }
-  }, [topic, selectedCourse, courses]);
 
   async function loadHistory(t: string) {
     setLoadingHistory(true);
@@ -119,9 +113,16 @@ export function ExamPrepChat() {
     }
   }
 
-  // A topic in the URL survives a refresh — the actual conversation lives in
-  // Supabase (chat_messages), keyed by topic, so we just re-fetch it.
+  // Restore the active conversation on mount: if the topic already lives in
+  // ChatSessionProvider (came back from another page — messages are already
+  // cached, no refetch needed), otherwise fall back to the URL (survives a
+  // hard refresh) and fetch it from Supabase.
   useEffect(() => {
+    if (topic) {
+      writeTopicToUrl(topic);
+      if (messages.length === 0) loadHistory(topic);
+      return;
+    }
     const t = readTopicFromUrl();
     if (t) {
       setTopic(t);
@@ -130,7 +131,6 @@ export function ExamPrepChat() {
   }, []);
 
   function startCourse(course: string) {
-    setSelectedCourse(course);
     setTopic(course);
     setError(null);
     writeTopicToUrl(course);
@@ -141,7 +141,6 @@ export function ExamPrepChat() {
     setTopic(null);
     setMessages([]);
     setError(null);
-    setSelectedCourse(null);
     setCourseQuery("");
     writeTopicToUrl(null);
   }
@@ -181,7 +180,7 @@ export function ExamPrepChat() {
           title="Exam Preparation Helper"
           description="Chat with your knowledge base to learn a topic or clear a confusion"
         />
-        <div className="flex flex-1 items-start justify-center overflow-y-auto p-6">
+        <div className="flex flex-1 items-center justify-center overflow-y-auto p-6">
           <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-sm">
             <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand/10 text-brand">
               <BookIcon className="h-6 w-6" />
