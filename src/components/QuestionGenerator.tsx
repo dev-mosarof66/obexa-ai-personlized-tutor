@@ -280,7 +280,7 @@ export function QuestionGenerator() {
         )}
 
         {phase === "results" && activeJob && (
-          <div className="max-w-3xl space-y-5">
+          <div className="max-w-5xl space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">
                 &ldquo;{activeJob.label}&rdquo; — {activeJob.questions.length} questions
@@ -293,74 +293,76 @@ export function QuestionGenerator() {
                 New set
               </button>
             </div>
-            {activeJob.questions.map((q, i) => {
-              const open = !!revealed[q.id];
-              return (
-                <div
-                  key={q.id}
-                  className={`rounded-xl border border-border border-l-4 bg-surface p-4 shadow-sm ${DIFFICULTY_STYLE[q.difficulty].border}`}
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold text-foreground/50">Q{i + 1}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${DIFFICULTY_STYLE[q.difficulty].badge}`}>
-                      {q.difficulty}
-                    </span>
-                    <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">
-                      {q.concept}
-                    </span>
-                    {q.verification.status === "verified" ? (
-                      <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                        <CheckCircleIcon className="h-3 w-3" /> Verified
-                      </span>
-                    ) : (
-                      <span
-                        className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400"
-                        title={q.verification.reasoning}
-                      >
-                        <RefreshIcon className="h-3 w-3" /> Regenerated
-                      </span>
-                    )}
-                  </div>
-                  <p className="mb-2 text-sm text-foreground/70">{q.scenario}</p>
-                  <p className="mb-3 text-sm font-medium">{q.question}</p>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleSolution(q.id)}
-                    className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {activeJob.questions.map((q, i) => {
+                const open = !!revealed[q.id];
+                return (
+                  <div
+                    key={q.id}
+                    className={`flex flex-col rounded-xl border border-border border-l-4 bg-surface p-4 shadow-sm ${DIFFICULTY_STYLE[q.difficulty].border}`}
                   >
-                    {open ? "Hide solution" : "Show solution"}
-                    <ChevronDownIcon className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {open && (
-                    <div className="mt-3 space-y-3 rounded-lg bg-brand/5 p-3">
-                      <div>
-                        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-                          Model answer
-                        </p>
-                        <p className="text-sm text-foreground/80">{q.modelAnswer}</p>
-                      </div>
-                      {q.rubric.length > 0 && (
-                        <div>
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
-                            A strong answer covers
-                          </p>
-                          <ul className="space-y-1">
-                            {q.rubric.map((r, j) => (
-                              <li key={j} className="flex items-start gap-1.5 text-sm text-foreground/80">
-                                <CheckCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                                {r.point}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-foreground/50">Q{i + 1}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${DIFFICULTY_STYLE[q.difficulty].badge}`}>
+                        {q.difficulty}
+                      </span>
+                      <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">
+                        {q.concept}
+                      </span>
+                      {q.verification.status === "verified" ? (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-600 dark:text-emerald-400">
+                          <CheckCircleIcon className="h-3 w-3" /> Verified
+                        </span>
+                      ) : (
+                        <span
+                          className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-600 dark:text-amber-400"
+                          title={q.verification.reasoning}
+                        >
+                          <RefreshIcon className="h-3 w-3" /> Regenerated
+                        </span>
                       )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <p className="mb-2 text-sm text-foreground/70">{q.scenario}</p>
+                    <p className="mb-3 text-sm font-medium">{q.question}</p>
+
+                    <button
+                      type="button"
+                      onClick={() => toggleSolution(q.id)}
+                      className="mt-auto flex w-full items-center justify-between rounded-lg border border-border px-3 py-2 text-sm font-medium text-brand transition-colors hover:bg-brand/10"
+                    >
+                      {open ? "Hide solution" : "Show solution"}
+                      <ChevronDownIcon className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+                    </button>
+
+                    {open && (
+                      <div className="mt-3 space-y-3 rounded-lg bg-brand/5 p-3">
+                        <div>
+                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
+                            Model answer
+                          </p>
+                          <p className="text-sm text-foreground/80">{q.modelAnswer}</p>
+                        </div>
+                        {q.rubric.length > 0 && (
+                          <div>
+                            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-foreground/50">
+                              A strong answer covers
+                            </p>
+                            <ul className="space-y-1">
+                              {q.rubric.map((r, j) => (
+                                <li key={j} className="flex items-start gap-1.5 text-sm text-foreground/80">
+                                  <CheckCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                  {r.point}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
